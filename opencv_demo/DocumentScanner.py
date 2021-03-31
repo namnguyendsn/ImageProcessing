@@ -3,7 +3,7 @@ from time import sleep
 import numpy as np
 
 kernel = np.ones((5, 5), np.uint8)
-imgW = 640
+imgW = 680
 imgH = 480
 
 Webcam_capture = cv2.VideoCapture("http://192.168.2.27:8080/?action=stream")
@@ -14,15 +14,20 @@ Webcam_capture.set(10, 0)
 
 def preProcessing(img):
     imgGray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    cv2.imshow("1", imgGray)
     imgBlur = cv2.GaussianBlur(imgGray, (5, 5), 1)
+    cv2.imshow("2", imgBlur)
     imgCanny = cv2.Canny(imgBlur, 200, 200)
+    cv2.imshow("3", imgCanny)
     imgDial = cv2.dilate(imgCanny, kernel, iterations = 2)
+    cv2.imshow("4", imgDial)
     imgThres = cv2.erode(imgDial, kernel, iterations = 1)
+    cv2.imshow("5", imgThres)
 
     return imgThres
 
 
-def getConlouts(img):
+def getContours(img):
     x, y, w, h = 0, 0, 0, 0
     maxArea = 0
     biggest = np.array([])
@@ -72,22 +77,66 @@ def getWarp(img, biggest):
     matrix = cv2.getPerspectiveTransform(pts1, pts2)
     imgOutput = cv2.warpPerspective(img, matrix, (imgW, imgH))
 
+    imgCropped = imgOutput[20:imgOutput.shape[0] - 20, 20:imgOutput.shape[1] - 20]
+    imgCropped = cv2.resize(imgCropped, (imgW, imgH))
+
     return imgOutput
 
+
+def stackImages(scale, imgArray):
+    rows = len(imgArray)
+    cols = len(imgArray[0])
+    rowsAvailable = isinstance(imgArray[0], list)
+    width = imgArray[0][0].shape[1]
+    height = imgArray[0][0].shape[0]
+    if rowsAvailable:
+        for x in range(0, rows):
+            for y in range(0, cols):
+                if imgArray[x][y].shape[:2] == imgArray[0][0].shape[:2]:
+                    imgArray[x][y] = cv2.resize(imgArray[x][y], (0, 0), None, scale, scale)
+                else:
+                    imgArray[x][y] = cv2.resize(imgArray[x][y], (imgArray[0][0].shape[1], imgArray[0][0].shape[0]),
+                                                None, scale, scale)
+                if len(imgArray[x][y].shape) == 2: imgArray[x][y] = cv2.cvtColor(imgArray[x][y], cv2.COLOR_GRAY2BGR)
+        imageBlank = np.zeros((height, width, 3), np.uint8)
+        hor = [imageBlank] * rows
+        hor_con = [imageBlank] * rows
+        for x in range(0, rows):
+            hor[x] = np.hstack(imgArray[x])
+        ver = np.vstack(hor)
+    else:
+        for x in range(0, rows):
+            if imgArray[x].shape[:2] == imgArray[0].shape[:2]:
+                imgArray[x] = cv2.resize(imgArray[x], (0, 0), None, scale, scale)
+            else:
+                imgArray[x] = cv2.resize(imgArray[x], (imgArray[0].shape[1], imgArray[0].shape[0]), None, scale, scale)
+            if len(imgArray[x].shape) == 2: imgArray[x] = cv2.cvtColor(imgArray[x], cv2.COLOR_GRAY2BGR)
+        hor = np.hstack(imgArray)
+        ver = hor
+    return ver
+
+
 while True:
-    # read image from local
     success, img = Webcam_capture.read()
+    img = cv2.resize(img, (imgW, imgH))
     imgContour = img.copy()
-    cv2.resize(img, (imgW, imgH))
+
     imgThres = preProcessing(img)
-    biggest = getConlouts(imgThres)
-    imgWarped = getWarp(img, biggest)
+    biggest = getContours(imgThres)
+    if biggest.size != 0:
+        pass
+        imgWarped = getWarp(img, biggest)
+        # imageArray = ([img,imgThres],
+        #           [imgContour,imgWarped])
+        imageArray = ([imgContour, imgWarped])
+        cv2.imshow("ImageWarped", imgWarped)
+    else:
+        # imageArray = ([img, imgThres],
+        #               [img, img])
+        imageArray = ([imgContour, img])
 
+    stackedImages = stackImages(0.6, imageArray)
+    cv2.imshow("WorkFlow", stackedImages)
 
-    cv2.imshow("Day la khung anh", img)
-    cv2.imshow("Day la imgContour", imgContour)
-    cv2.imshow("Day la imgThres", imgWarped)
-    cv2.imshow("Day la imgThres", imgThres)
-
-    # wait for keys
-    cv2.waitKey(1)
+    if cv2.waitKey(1) and 0xFF == ord('q'):
+        break
